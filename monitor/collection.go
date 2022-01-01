@@ -2,10 +2,7 @@ package monitor
 
 import "time"
 
-type Collection interface {
-	record(time *time.Time, delay int)
-	out(target Output) error
-}
-
-type Output interface {
+type Collector interface {
+	record(seq int, time *time.Time, delay *time.Duration)
+	output(host string, startTime *time.Time, records *map[int]*time.Duration, report *Report, output string) error
 }

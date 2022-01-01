@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"ping-prober/v2/monitor"
 	"strings"
 	"unicode"
 )
@@ -44,7 +45,11 @@ func isValidIpAddress(addr string) bool {
 }
 
 func main() {
-	host := flag.String("host", "", "Address on which to monitor delay metrics.")
+	var (
+		host   = flag.String("host", "", "Address on which to monitor delay metrics.")
+		size   = flag.Int("size", 1024, "Size of packet being sent.")
+		output = flag.String("output", "", "Output location of the report.")
+	)
 	flag.Parse()
 	if *host == "" && len(os.Args) > 1 {
 		host = &os.Args[1]
@@ -55,4 +60,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+	task := monitor.Task{Host: *host, Size: *size, Output: *output, Collector: &monitor.Chart{}}
+	task.Start()
 }
