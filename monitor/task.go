@@ -143,6 +143,9 @@ func (task *Task) recordAll() {
 	stats := task.pinger.Statistics()
 	task.addReport(stats)
 
+	if len(*task.records) == 0 {
+		return
+	}
 	err := task.Collector.output(task.Host, task.startTime, task.records, task.report, task.Output)
 	if err != nil {
 		panic(err)
