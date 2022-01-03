@@ -95,8 +95,7 @@ func New(addr string) *Pinger {
 		Interval:   time.Second,
 		RecordRtts: true,
 		Size:       timeSliceLength + trackerLength,
-		Timeout:    time.Second,
-		//Timeout: time.Duration(math.MaxInt64),
+		Timeout: time.Duration(math.MaxInt64),
 
 		addr:              addr,
 		done:              make(chan interface{}),
@@ -107,7 +106,7 @@ func New(addr string) *Pinger {
 		network:           "ip",
 		protocol:          "udp",
 		awaitingSequences: firstSequence,
-		trackerSequences:  make([]int, 0),
+		trackerPackets:    make([]InFlightPacket, 0),
 		TTL:               64,
 		logger:            StdLogger{Logger: log.New(log.Writer(), log.Prefix(), log.Flags())},
 	}
@@ -200,8 +199,8 @@ type Pinger struct {
 	ipv4     bool
 	id       int
 	sequence int
-	// trackerSequences is used to keep track of sequence for the purposes
-	trackerSequences []int
+	// trackerPackets is used to keep track of sequence for the purposes
+	trackerPackets []InFlightPacket
 	// awaitingSequences are in-flight sequence numbers we keep track of to help remove duplicate receipts
 	awaitingSequences map[uuid.UUID]map[int]struct{}
 	// network is one of "ip", "ip4", or "ip6".
@@ -283,7 +282,8 @@ type Statistics struct {
 }
 
 type InFlightPacket struct {
-	DispatchedTime time.Time
+	Seq int
+	TimeoutTime time.Time
 }
 
 func (p *Pinger) updateStatistics(pkt *Packet) {
@@ -470,15 +470,16 @@ func (p *Pinger) runLoop(
 		logger = NoopLogger{}
 	}
 
-	//timeout := time.NewTicker(p.Timeout)
+	timeout := time.NewTicker(p.Timeout)
 	interval := time.NewTicker(p.Interval)
 	defer func() {
 		p.Stop()
 		interval.Stop()
-		//timeout.Stop()
+		timeout.Stop()
 	}()
 
-	if err := p.sendICMP(conn); err != nil {
+	now := time.Now()
+	if err := p.sendICMP(conn, &now); err != nil {
 		return err
 	}
 
@@ -487,9 +488,8 @@ func (p *Pinger) runLoop(
 		case <-p.done:
 			return nil
 
-		//case <-timeout.C:
-		//	p.checkTimeout()
-			//return nil
+		case <-timeout.C:
+			return nil
 
 		case r := <-recvCh:
 			err := p.processPacket(r)
@@ -503,8 +503,9 @@ func (p *Pinger) runLoop(
 				interval.Stop()
 				continue
 			}
-			p.checkTimeout()
-			err := p.sendICMP(conn)
+			now := time.Now()
+			p.checkTimeout(&now)
+			err := p.sendICMP(conn, &now)
 			if err != nil {
 				// FIXME: this logs as FATAL but continues
 				logger.Fatalf("sending packet: %s", err)
@@ -581,16 +582,19 @@ func newExpBackoff(baseDelay time.Duration, maxExp int64) expBackoff {
 	return expBackoff{baseDelay: baseDelay, maxExp: maxExp}
 }
 
-func (p *Pinger) checkTimeout() {
-	if len(p.trackerSequences) == 0 {
+func (p *Pinger) checkTimeout(now *time.Time) {
+	if len(p.trackerPackets) == 0 {
 		return
 	}
 
-	firstSeq := p.trackerSequences[0]
-	p.trackerSequences = p.trackerSequences[1:]
+	head := p.trackerPackets[0]
+	if now.Before(head.TimeoutTime) {
+		return
+	}
 
+	p.trackerPackets = p.trackerPackets[1:]
 	if p.OnTimeout != nil {
-		p.OnTimeout(firstSeq)
+		p.OnTimeout(head.Seq)
 	}
 }
 
@@ -656,8 +660,6 @@ func (p *Pinger) getCurrentTrackerUUID() uuid.UUID {
 }
 
 func (p *Pinger) processPacket(recv *packet) error {
-	p.trackerSequences = p.trackerSequences[1:]
-
 	receivedAt := time.Now()
 	var proto int
 	if p.ipv4 {
@@ -713,6 +715,9 @@ func (p *Pinger) processPacket(recv *packet) error {
 			return nil
 		}
 		// remove it from the list of sequences we're waiting for so we don't get duplicates.
+		if len(p.trackerPackets) > 0 {
+			p.trackerPackets = p.trackerPackets[1:]
+		}
 		delete(p.awaitingSequences[*pktUUID], pkt.Seq)
 		p.updateStatistics(inPkt)
 	default:
@@ -728,7 +733,7 @@ func (p *Pinger) processPacket(recv *packet) error {
 	return nil
 }
 
-func (p *Pinger) sendICMP(conn packetConn) error {
+func (p *Pinger) sendICMP(conn packetConn, now *time.Time) error {
 	var dst net.Addr = p.ipaddr
 	if p.protocol == "udp" {
 		dst = &net.UDPAddr{IP: p.ipaddr.IP, Zone: p.ipaddr.Zone}
@@ -783,7 +788,9 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 		}
 		// mark this sequence as in-flight
 		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
-		p.trackerSequences = append(p.trackerSequences, p.sequence)
+		if p.OnTimeout != nil {
+			p.trackerPackets = append(p.trackerPackets, InFlightPacket{Seq: p.sequence, TimeoutTime: now.Add(p.Interval)})
+		}
 		p.PacketsSent++
 		p.sequence++
 		if p.sequence > 65535 {
