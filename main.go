@@ -46,21 +46,33 @@ func isValidIpAddress(addr string) bool {
 
 func main() {
 	var (
-		host   = flag.String("host", "", "Address on which to monitor delay metrics.")
-		size   = flag.Int("size", 1024, "Size of packet being sent.")
-		output = flag.String("output", "", "Output location of the report.")
+		host   	= flag.String("host", "", "Address on which to monitor delay metrics.")
+		size   	= flag.Int("size", 1024, "Size of packet being sent.")
+		output 	= flag.String("output", "", "Output location of the latency report.")
 	)
-	flag.Parse()
-	if *host == "" && len(os.Args) > 1 {
-		host = &os.Args[1]
-	}
 
-	if !isValidIpAddress(*host) {
-		err := fmt.Errorf("host %v is invalid!!", *host)
-		fmt.Println(err)
+
+	addr := os.Args[1]
+	if addr == "" {
+		fmt.Println("host require!!")
 		return
 	}
 
-	task := monitor.Task{Host: *host, Size: *size, Output: *output, Collector: &monitor.Chart{}}
-	task.Start()
+	if addr[0] == '-' {
+		flag.Parse()
+		addr = *host
+	} else {
+		flag.CommandLine.Parse(os.Args[2:])
+	}
+
+	if !isValidIpAddress(addr) {
+		fmt.Printf("host %v is invalid!!", addr)
+		return
+	}
+
+	task := monitor.Task{Host: addr, Size: *size, Output: *output, Collector: &monitor.Chart{}}
+	err := task.Start()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
 }

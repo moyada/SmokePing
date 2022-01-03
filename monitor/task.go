@@ -2,9 +2,10 @@ package monitor
 
 import (
 	"fmt"
-	"github.com/go-ping/ping"
 	"os"
 	"os/signal"
+	"ping-prober/v2/ping"
+	"strings"
 	"time"
 )
 
@@ -31,17 +32,43 @@ type Report struct {
 
 const count = 60
 
-func initTask(task *Task) {
+func initTask(task *Task) error {
+	if task.Size < 32 {
+		task.Size = 32
+	}
+
 	task.recording = -1
 
 	records := make(map[int]*time.Duration, 0)
 	task.records = &records
 
 	task.report = &Report{}
+
+	if task.Output != "" {
+		prefixIdx := strings.LastIndex(task.Output, ".png")
+		if prefixIdx < 1 || task.Output[prefixIdx:] != ".png" {
+			return fmt.Errorf("output should be end with .png")
+		}
+
+		if task.Output[prefixIdx-1] == '/' {
+			return fmt.Errorf("invalid output name")
+		}
+	}
+
+	return nil
 }
 
-func (task *Task) Start() {
-	initTask(task)
+func toFileName(host string, startTime *time.Time, duration int) string {
+	s1 := startTime.Format("2006-01-02 15:04:05")
+	s2 := startTime.Add(time.Duration(duration) * time.Second).Format("15:04:05")
+	return fmt.Sprintf("%v %v~%v.png", host, s1, s2)
+}
+
+func (task *Task) Start() error {
+	err := initTask(task)
+	if err != nil {
+		return err
+	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -49,15 +76,20 @@ func (task *Task) Start() {
 	go func() {
 		select {
 		case sig := <-c:
-			fmt.Printf("\nmonitor %s \n", sig)
+			fmt.Printf("\nlatency monitor %s \n", sig)
 			task.recordAll()
+			task.saveResult()
+			task.pinger.Stop()
 			os.Exit(1)
 		}
 	}()
 
 	t := time.Now()
 	task.startTime = &t
-	task.run(1)
+	_, err = task.run(0)
+	if err != nil {
+		return err
+	}
 
 	//var index = 1
 	//for {
@@ -67,17 +99,22 @@ func (task *Task) Start() {
 	//	go task.record(index)
 	//	index = index + count
 	//}
+	return nil
 }
 
-func (task *Task) run(index int) *ping.Statistics {
+func (task *Task) run(index int) (*ping.Statistics, error) {
 	pinger, err := ping.NewPinger(task.Host)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	pinger.Size = task.Size - 8
 
 	pinger.OnSend = func(pkt *ping.Packet) {
 		(*task.records)[index+pkt.Seq] = nil
+	}
+
+	pinger.OnTimeout = func(seq int) {
+		fmt.Printf("Request timeout for icmp_seq %v\n", seq)
 	}
 
 	pinger.OnRecv = func(pkt *ping.Packet) {
@@ -93,9 +130,9 @@ func (task *Task) run(index int) *ping.Statistics {
 
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return pinger.Statistics()
+	return pinger.Statistics(), nil
 }
 
 func (task *Task) record(index int) {
@@ -139,14 +176,27 @@ func (task *Task) recordAll() {
 	//	t := task.startTime.Add(time.Second * time.Duration(key))
 	//	fmt.Printf("%v  %v\n", t, timeout)
 	//}
-
 	stats := task.pinger.Statistics()
 	task.addReport(stats)
+}
 
-	if len(*task.records) == 0 {
+func (task *Task) saveResult() {
+	count := len(*task.records)
+	if count < 2 {
 		return
 	}
-	err := task.Collector.output(task.Host, task.startTime, task.records, task.report, task.Output)
+
+	if task.Output == "" {
+		task.Output = toFileName(task.Host, task.startTime, len(*task.records))
+	} else {
+		dirIdx := strings.LastIndex(task.Output, "/")
+		if dirIdx != -1 {
+			os.MkdirAll(task.Output[:dirIdx], os.ModePerm)
+		}
+	}
+
+	fmt.Printf("build %v latency report >>> %v\n", task.Host, task.Output)
+	err := task.Collector.output(task.Output, task.startTime, task.records, task.report)
 	if err != nil {
 		panic(err)
 	}
