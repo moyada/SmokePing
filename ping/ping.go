@@ -90,12 +90,13 @@ func New(addr string) *Pinger {
 	firstUUID := uuid.New()
 	var firstSequence = map[uuid.UUID]map[int]struct{}{}
 	firstSequence[firstUUID] = make(map[int]struct{})
-	return &Pinger{
+	pinger := &Pinger{
 		Count:      -1,
 		Interval:   time.Second,
 		RecordRtts: true,
 		Size:       timeSliceLength + trackerLength,
 		Timeout: time.Duration(math.MaxInt64),
+		PacketTimeout: time.Second,
 
 		addr:              addr,
 		done:              make(chan interface{}),
@@ -106,10 +107,13 @@ func New(addr string) *Pinger {
 		network:           "ip",
 		protocol:          "udp",
 		awaitingSequences: firstSequence,
-		trackerPackets:    make([]InFlightPacket, 0),
+		trackerPackets:    make(map[int]time.Time),
 		TTL:               64,
 		logger:            StdLogger{Logger: log.New(log.Writer(), log.Prefix(), log.Flags())},
 	}
+
+	pinger.PacketTimeout = pinger.PacketTimeout - (10 * time.Millisecond)
+	return pinger
 }
 
 // NewPinger returns a new Pinger and resolves the address.
@@ -126,6 +130,7 @@ type Pinger struct {
 	// Timeout specifies a timeout before ping exits, regardless of how many
 	// packets have been received.
 	Timeout time.Duration
+	PacketTimeout time.Duration
 
 	// Count tells pinger to stop after sending (and receiving) Count echo
 	// packets. If this option is not specified, pinger will operate until
@@ -200,7 +205,7 @@ type Pinger struct {
 	id       int
 	sequence int
 	// trackerPackets is used to keep track of sequence for the purposes
-	trackerPackets []InFlightPacket
+	trackerPackets map[int]time.Time
 	// awaitingSequences are in-flight sequence numbers we keep track of to help remove duplicate receipts
 	awaitingSequences map[uuid.UUID]map[int]struct{}
 	// network is one of "ip", "ip4", or "ip6".
@@ -587,14 +592,13 @@ func (p *Pinger) checkTimeout(now *time.Time) {
 		return
 	}
 
-	head := p.trackerPackets[0]
-	if now.Before(head.TimeoutTime) {
-		return
-	}
-
-	p.trackerPackets = p.trackerPackets[1:]
-	if p.OnTimeout != nil {
-		p.OnTimeout(head.Seq)
+	for seq, timeout := range p.trackerPackets {
+		if now.After(timeout) {
+			delete(p.trackerPackets, seq)
+			if p.OnTimeout != nil {
+				p.OnTimeout(seq)
+			}
+		}
 	}
 }
 
@@ -716,7 +720,7 @@ func (p *Pinger) processPacket(recv *packet) error {
 		}
 		// remove it from the list of sequences we're waiting for so we don't get duplicates.
 		if len(p.trackerPackets) > 0 {
-			p.trackerPackets = p.trackerPackets[1:]
+			delete(p.trackerPackets, pkt.Seq)
 		}
 		delete(p.awaitingSequences[*pktUUID], pkt.Seq)
 		p.updateStatistics(inPkt)
@@ -744,7 +748,7 @@ func (p *Pinger) sendICMP(conn packetConn, now *time.Time) error {
 	if err != nil {
 		return fmt.Errorf("unable to marshal UUID binary: %w", err)
 	}
-	t := append(timeToBytes(time.Now()), uuidEncoded...)
+	t := append(timeToBytes(now), uuidEncoded...)
 	if remainSize := p.Size - timeSliceLength - trackerLength; remainSize > 0 {
 		t = append(t, bytes.Repeat([]byte{1}, remainSize)...)
 	}
@@ -789,7 +793,7 @@ func (p *Pinger) sendICMP(conn packetConn, now *time.Time) error {
 		// mark this sequence as in-flight
 		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
 		if p.OnTimeout != nil {
-			p.trackerPackets = append(p.trackerPackets, InFlightPacket{Seq: p.sequence, TimeoutTime: now.Add(p.Interval)})
+			p.trackerPackets[p.sequence] = now.Add(p.PacketTimeout)
 		}
 		p.PacketsSent++
 		p.sequence++
@@ -840,7 +844,7 @@ func isIPv4(ip net.IP) bool {
 	return len(ip.To4()) == net.IPv4len
 }
 
-func timeToBytes(t time.Time) []byte {
+func timeToBytes(t *time.Time) []byte {
 	nsec := t.UnixNano()
 	b := make([]byte, 8)
 	for i := uint8(0); i < 8; i++ {

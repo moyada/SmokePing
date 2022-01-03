@@ -117,6 +117,7 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 	var step, min int
 
 	count := len(*records)
+
 	switch {
 		case count > 43200: // 12小时 1小时
 			step = 3600
@@ -164,6 +165,7 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 	// 监听时间
 	var du = time.Duration(len(keys)-1) * time.Second
 
+	timeoutCount := 0
 	var lastTimeOut = -10
 
 	maxIndex := len(keys) - 1
@@ -229,6 +231,8 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 			}
 		} else {
 			// 请求超时
+			timeoutCount++
+
 			var xd, xt float64
 			if i > 0 && lastTimeOut != i-1 {
 				// 上个请求未超时
@@ -393,19 +397,35 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 	labels = append(labels, chart.Value2{
 		XValue: x,
 		YValue: 1180,
-		Label:  fmt.Sprintf("AvgRtt:  %v ms", report.AvgRtt.Milliseconds()),
+		Label:  fmt.Sprintf("AvgRtt: %v ms", report.AvgRtt.Milliseconds()),
 		Style:  reportStyle,
 	})
 	labels = append(labels, chart.Value2{
 		XValue: x,
-		YValue: 1130,
-		Label:  fmt.Sprintf("MaxRtt:  %v ms", report.MaxRtt.Milliseconds()),
+		YValue: 1135,
+		Label:  fmt.Sprintf("MaxRtt: %v ms", report.MaxRtt.Milliseconds()),
 		Style:  reportStyle,
 	})
 	labels = append(labels, chart.Value2{
 		XValue: x,
-		YValue: 1080,
-		Label:  fmt.Sprintf("MinRtt:  %v ms", report.MinRtt.Milliseconds()),
+		YValue: 1090,
+		Label:  fmt.Sprintf("MinRtt: %v ms", report.MinRtt.Milliseconds()),
+		Style:  reportStyle,
+	})
+
+	var tc string
+	if timeoutCount == 0 {
+		tc = "0"
+	} else if timeoutCount == count {
+		tc = "100"
+	} else {
+		tc = fmt.Sprintf("%.2f", float64(timeoutCount * 100) / float64(count))
+	}
+
+	labels = append(labels, chart.Value2{
+		XValue: x,
+		YValue: 1045,
+		Label:  fmt.Sprintf("Timeout: %v", tc) + "%",
 		Style:  reportStyle,
 	})
 

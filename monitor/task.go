@@ -70,6 +70,8 @@ func (task *Task) Start() error {
 		return err
 	}
 
+	done := make(chan bool)
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
@@ -77,16 +79,19 @@ func (task *Task) Start() error {
 		select {
 		case sig := <-c:
 			fmt.Printf("\nlatency monitor %s \n", sig)
+			task.pinger.Stop()
 			task.recordAll()
 			task.saveResult()
-			task.pinger.Stop()
-			os.Exit(1)
+			done <- true
 		}
 	}()
 
 	t := time.Now()
 	task.startTime = &t
 	_, err = task.run(0)
+
+	<-done
+
 	if err != nil {
 		return err
 	}
