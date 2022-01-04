@@ -28,6 +28,7 @@ type Report struct {
 	MinRtt *time.Duration
 	MaxRtt *time.Duration
 	AvgRtt *time.Duration
+	Loss   float64
 }
 
 const count = 60
@@ -155,9 +156,11 @@ func (task *Task) record(index int) {
 func (task *Task) addReport(stat *ping.Statistics) {
 	if task.report.AvgRtt == nil {
 		task.report.AvgRtt = &stat.AvgRtt
+		task.report.Loss = stat.PacketLoss
 	} else {
 		avg := (*task.report.AvgRtt + stat.AvgRtt) / 2
 		task.report.AvgRtt = &avg
+		task.report.Loss = (task.report.Loss + stat.PacketLoss) / 2
 	}
 
 	if task.report.MinRtt == nil || *task.report.MinRtt > stat.MinRtt {
