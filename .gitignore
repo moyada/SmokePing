@@ -15,4 +15,3 @@
 vendor/
 .idea
 *.DS_Store
-custom.go

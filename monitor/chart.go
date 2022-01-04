@@ -10,7 +10,7 @@ import (
 
 const (
 	height, width                    = 1080, 1800
-	zeroY, timeoutY, healthY, labelY = 0, 1000, 200, 1020
+	zeroY, timeoutY, healthY, labelY = 0, 1100, 200, 1020
 )
 
 var (
@@ -72,7 +72,8 @@ var (
 		{Value: 700, Label: "700 ms"},
 		{Value: 800, Label: "800 ms"},
 		{Value: 900, Label: "900 ms"},
-		{Value: 1000, Label: "Timeout"},
+		{Value: 1000, Label: "1000 ms"},
+		{Value: 1100, Label: "Timeout"},
 		{Value: 1200, Label: ""},
 	}
 
@@ -118,19 +119,19 @@ func calculateDraw(startTime *time.Time, count int) (int, int, bool) {
 		timeLabel = true
 	case 10800 >= count && count > 3600: // 1小时 10分钟
 		step = 600
-		min = 10 - startTime.Minute() % 10
+		min = 10 - startTime.Minute()%10
 		if min <= 5 {
 			min += 10
 		}
 	case 3600 >= count && count > 1800: // 半小时 5分钟
 		step = 300
-		min = 5 - startTime.Minute() % 5
+		min = 5 - startTime.Minute()%5
 		if min == 1 {
 			min += 5
 		}
 	case 1800 >= count && count > 600: // 10分钟 2分钟
 		step = 120
-		min = 2 - startTime.Minute() % 2
+		min = 2 - startTime.Minute()%2
 	case 600 >= count && count > 300: // 5分钟 1分钟
 		step = 60
 		min = 1
@@ -142,49 +143,112 @@ func calculateDraw(startTime *time.Time, count int) (int, int, bool) {
 	return step, min, timeLabel
 }
 
+// 描绘x轴坐标
+func xAxis(startTime, endTime *time.Time, step, min int) []chart.Tick {
+	ticks := make([]chart.Tick, 0)
+
+	// 起点
+	ticks = append(ticks, chart.Tick{Value: getTimeNano(startTime), Label: timeFormat(startTime)})
+
+	// 整数时间点
+	var nextTime time.Time
+
+	sec := startTime.Second()
+	if min > 0 {
+		nextTime = startTime.Add(time.Duration(60-sec) * time.Second)
+		nextTime = nextTime.Add(time.Duration(min-1) * time.Minute)
+	} else if sec%30 < 15 {
+		nextTime = startTime.Add(time.Duration(30-sec%30) * time.Second)
+	} else {
+		nextTime = *startTime
+	}
+
+	for i := 0; ; i++ {
+		nt := nextTime.Add(time.Second * time.Duration(step*i))
+		if nt.After(*endTime) {
+			// 终点
+			tick := chart.Tick{Value: getTimeNano(endTime), Label: timeFormat(endTime)}
+
+			if len(ticks) < 2 {
+				ticks = append(ticks, tick)
+				break
+			}
+
+			switch {
+			case step >= 600:
+				ticks[i] = tick
+			case min > 0 && (endTime.Add(time.Duration(-step) * time.Minute).Before(nt)):
+				ticks[i] = tick
+			case min == 0 && (endTime.Add(-time.Minute).Before(nt)):
+				ticks[i] = tick
+			default:
+				ticks = append(ticks, tick)
+			}
+
+			break
+		}
+		tick := chart.Tick{Value: getTimeNano(&nt), Label: timeFormat(&nt)}
+		ticks = append(ticks, tick)
+	}
+	return ticks
+}
+
+type LineData struct {
+	xLine, yLine []float64
+}
+
+func (p *LineData) addPoint(x, y float64) {
+	p.xLine = append(p.xLine, x)
+	p.yLine = append(p.yLine, y)
+}
+
+func newLineData() *LineData {
+	return &LineData{
+		xLine: make([]float64, 0),
+		yLine: make([]float64, 0),
+	}
+}
+
 type Chart struct {
 }
 
-func (c *Chart) record(seq int, time *time.Time, latency *time.Duration) {
+func (c *Chart) record(seq int, latency *time.Duration) {
 }
 
-func (c *Chart) output(output string, startTime *time.Time, records *map[int]*time.Duration, report *Report) error {
-	latencyXValues := make([]float64, 0)
-	latencyYValues := make([]float64, 0)
-
-	timeoutXValues := make([]float64, 0)
-	timeoutYValues := make([]float64, 0)
-
-	HealthXValues := make([]float64, 0)
-	HealthYValues := make([]float64, 0)
+func (c *Chart) output(output string, startTime *time.Time, records map[int]*time.Duration, report *Report) error {
+	latencyData := newLineData()
+	timeoutData := newLineData()
+	healthData := newLineData()
 
 	labels := make([]chart.Value2, 0)
 
-	total := len(*records)
+	total := len(records)
 	lastIndex := total - 1
 
 	// 计算时间轴区间
-	step, min, timeLabel := calculateDraw(startTime, total)
+	step, min, _ := calculateDraw(startTime, total)
 
 	// 排序
 	var keys []int
-	for key := range *records {
+	for key := range records {
 		keys = append(keys, key)
 	}
 	sort.Ints(keys)
 
 	// 监听时间
-	var du = time.Duration(lastIndex) * time.Second
+	var duration = time.Duration(lastIndex) * time.Second
 
 	lastTimeOut := -10
 
 	for i, key := range keys {
-		timeout, exist := (*records)[key]
+		timeout, exist := (records)[key]
 		// 是否最后一个节点
 		lastItem := lastIndex == i
 
 		t := startTime.Add(time.Second * time.Duration(key))
 		x := getTimeNano(&t)
+
+		healthData.addPoint(x, healthY)
 
 		if exist && timeout != nil {
 			y := float64(timeout.Milliseconds())
@@ -200,35 +264,25 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 				xd := getTimeNano(&td)
 
 				// 延长耗时折线
-				latencyXValues = append(latencyXValues, xd)
-				latencyYValues = append(latencyYValues, zeroY)
-
+				latencyData.addPoint(xd, zeroY)
 				// 上升耗时折线
-				latencyXValues = append(latencyXValues, xd)
-				latencyYValues = append(latencyYValues, y)
+				latencyData.addPoint(xd, y)
 
 				if lastItem {
 					// 延长耗时折线
-					latencyXValues = append(latencyXValues, x)
-					latencyYValues = append(latencyYValues, y)
+					latencyData.addPoint(x, y)
 				}
 
 				tt := t.Add(-40 * time.Millisecond)
 				xt := getTimeNano(&tt)
 
 				// 延长超时折线
-				timeoutXValues = append(timeoutXValues, xt)
-				timeoutYValues = append(timeoutYValues, timeoutY)
-
+				timeoutData.addPoint(xt, timeoutY)
 				// 下降超时折线
-				timeoutXValues = append(timeoutXValues, xt)
-				timeoutYValues = append(timeoutYValues, zeroY)
+				timeoutData.addPoint(xt, zeroY)
 			} else {
-				latencyXValues = append(latencyXValues, x)
-				latencyYValues = append(latencyYValues, y)
-
-				timeoutXValues = append(timeoutXValues, x)
-				timeoutYValues = append(timeoutYValues, zeroY)
+				latencyData.addPoint(x, y)
+				timeoutData.addPoint(x, zeroY)
 			}
 		} else {
 			// 请求超时
@@ -241,158 +295,87 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 				if lastItem {
 					dt = t.Add(-40 * time.Millisecond)
 				} else {
-					dt = t.Add(-20 * time.Millisecond)
+					dt = t.Add(-30 * time.Millisecond)
 				}
 				xd = getTimeNano(&dt)
-				yl := latencyYValues[len(latencyYValues)-1]
+				yl := latencyData.yLine[len(latencyData.yLine)-1]
 
-				latencyXValues = append(latencyXValues, xd)
-				latencyYValues = append(latencyYValues, yl)
+				latencyData.addPoint(xd, yl)
 
 				// 延长超时折线
 				if lastItem {
 					tt := t.Add(-20 * time.Millisecond)
 					xt = getTimeNano(&tt)
 
-					timeoutXValues = append(timeoutXValues, xt)
-					timeoutYValues = append(timeoutYValues, zeroY)
-
-					timeoutXValues = append(timeoutXValues, xt)
-					timeoutYValues = append(timeoutYValues, timeoutY)
+					timeoutData.addPoint(xt, zeroY)
+					timeoutData.addPoint(xt, timeoutY)
 
 					xt = x
 				} else {
-					tt := t.Add(-20 * time.Millisecond)
+					tt := t.Add(-10 * time.Millisecond)
 					xt = getTimeNano(&tt)
-					xt = x
+					timeoutData.addPoint(xt, timeoutY)
 
-					timeoutXValues = append(timeoutXValues, xt)
-					timeoutYValues = append(timeoutYValues, zeroY)
+					xt = x
 				}
 
 			} else {
 				xd = x
 				xt = x
 			}
-			latencyXValues = append(latencyXValues, xd)
-			latencyYValues = append(latencyYValues, zeroY)
-
-			timeoutXValues = append(timeoutXValues, xt)
-			timeoutYValues = append(timeoutYValues, timeoutY)
+			latencyData.addPoint(xd, zeroY)
+			timeoutData.addPoint(xt, timeoutY)
 
 			// 上个请求未超时，添加超时标签
-			if lastTimeOut != i-1 && !lastItem {
-				name := timeoutLabel
-				// 3小时以上标签更换为时间点
-				if timeLabel {
-					name = timeFormat(&t)
-				}
-
-				label := chart.Value2{
-					XValue: x,
-					YValue: labelY,
-					Label:  name,
-					Style:  annoStyle,
-				}
-				labels = append(labels, label)
-			}
+			//if lastTimeOut != i-1 && !lastItem {
+			//	name := timeoutLabel
+			//	// 3小时以上标签更换为时间点
+			//	if timeLabel {
+			//		name = timeFormat(&t)
+			//	}
+			//
+			//	label := chart.Value2{
+			//		XValue: x,
+			//		YValue: labelY,
+			//		Label:  name,
+			//		Style:  annoStyle,
+			//	}
+			//	labels = append(labels, label)
+			//}
 
 			lastTimeOut = i
 		}
-
-		HealthXValues = append(HealthXValues, x)
-		HealthYValues = append(HealthYValues, healthY)
 	}
-
-	//for i, value := range latencyXValues {
-	//	fmt.Printf("%v %v\n", value, latencyYValues[i])
-	//}
-	//fmt.Println("-------")
-	//for i, value := range timeoutXValues {
-	//	fmt.Printf("%v %v\n", value, timeoutYValues[i])
-	//}
-	//fmt.Println("-------")
-	//for i, value := range HealthXValues {
-	//	fmt.Printf("%v %v\n", value, HealthYValues[i])
-	//}
 
 	// 描绘x轴
-	endTime := startTime.Add(du)
-	ticks := make([]chart.Tick, 0)
-
-	// 起点
-	ticks = append(ticks, chart.Tick{Value: getTimeNano(startTime), Label: timeFormat(startTime)})
-
-	// 整数时间点
-	var nextTime time.Time
-
-	sec := startTime.Second()
-	if min > 0 {
-		nextTime = startTime.Add(time.Duration(60 - sec) * time.Second)
-		nextTime = nextTime.Add(time.Duration(min - 1) * time.Minute)
-	} else if sec%30 < 15 {
-		nextTime = startTime.Add(time.Duration(30 - sec%30) * time.Second)
-	} else {
-		nextTime = *startTime
-	}
-
-	for i := 0; ; i++ {
-		nt := nextTime.Add(time.Second * time.Duration(step*i))
-		if nt.After(endTime) {
-			// 终点
-			tick := chart.Tick{Value: getTimeNano(&endTime), Label: timeFormat(&endTime)}
-
-			if len(ticks) < 2 {
-				ticks = append(ticks, tick)
-				break
-			}
-
-			switch {
-				case step >= 600:
-					ticks[i] = tick
-				case min > 0 && (endTime.Minute() % min) < (min / 2):
-					ticks[i] = tick
-				case min == 0 && (endTime.Second() < 15 || endTime.Second() > 45):
-					ticks[i] = tick
-				default:
-					ticks = append(ticks, tick)
-			}
-
-			break
-		}
-		tick := chart.Tick{Value: getTimeNano(&nt), Label: timeFormat(&nt)}
-		ticks = append(ticks, tick)
-	}
-
-	//for _, tick := range ticks {
-	//	fmt.Printf("%v %v \n", tick.Label, tick.Value)
-	//}
+	endTime := startTime.Add(duration)
+	ticks := xAxis(startTime, &endTime, step, min)
 
 	// 耗时折线
 	latencyLine := chart.ContinuousSeries{
 		Name:    "Latency",
 		Style:   latencyStyle,
-		XValues: latencyXValues,
-		YValues: latencyYValues,
+		XValues: latencyData.xLine,
+		YValues: latencyData.yLine,
 	}
 
 	// 超时折线
 	timeoutLine := chart.ContinuousSeries{
 		Name:    "Timeout",
 		Style:   timeoutStyle,
-		XValues: timeoutXValues,
-		YValues: timeoutYValues,
+		XValues: timeoutData.xLine,
+		YValues: timeoutData.yLine,
 	}
 	// 安全耗时
 	safeLine := &chart.ContinuousSeries{
 		Name:    fmt.Sprintf("Safety (%v ms)", healthY),
 		Style:   safetyStyle,
-		XValues: HealthXValues,
-		YValues: HealthYValues,
+		XValues: healthData.xLine,
+		YValues: healthData.yLine,
 	}
 
 	// 综合报告
-	x := latencyXValues[0] - 200000
+	x := latencyData.xLine[0] - 200000
 	labels = append(labels, chart.Value2{
 		XValue: x,
 		YValue: 1180,
@@ -417,10 +400,6 @@ func (c *Chart) output(output string, startTime *time.Time, records *map[int]*ti
 		Label:  fmt.Sprintf("Loss:  %v", fmt.Sprintf("%.2f", report.Loss)) + " %",
 		Style:  reportStyle,
 	})
-
-	for _, label := range labels {
-		fmt.Println(label.Label)
-	}
 
 	w := width
 	if total > 1800 {

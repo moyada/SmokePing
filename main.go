@@ -46,11 +46,10 @@ func isValidIpAddress(addr string) bool {
 
 func main() {
 	var (
-		host   	= flag.String("host", "", "Address on which to monitor delay metrics.")
-		size   	= flag.Int("size", 1024, "Size of packet being sent.")
-		output 	= flag.String("output", "", "Output location of the latency report.")
+		host   = flag.String("host", "", "Address on which to monitor latency metrics.")
+		size   = flag.Int("size", 1024, "Size of packet being sent.")
+		output = flag.String("output", "", "Output location of the latency report.")
 	)
-
 
 	addr := os.Args[1]
 	if addr == "" {
