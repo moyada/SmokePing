@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/moyada/smoke-ping/v2/monitor"
 	"net"
 	"os"
-	"ping-prober/v2/monitor"
 	"strings"
 	"unicode"
 )

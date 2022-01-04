@@ -1,6 +1,6 @@
 # SmokePing
 
-[![Build status](https://ci.appveyor.com/api/projects/status/nfejig7klr4diui4/branch/master?svg=true)](https://ci.appveyor.com/project/moyada/ping-prober/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/t0ec07groeri47ev/branch/master?svg=true)](https://ci.appveyor.com/project/moyada/smokeping/branch/master)
 
 
 SmokePing Go version, a latency logging and graphing and alerting system. It consists of a daemon process which organizes the latency measurements and a CGI which presents the graphs.
@@ -13,7 +13,7 @@ SmokePing Go version, a latency logging and graphing and alerting system. It con
 Download [release packages](https://github.com/moyada/ping-prober/releases) or execute `build.sh`.
 
 ```
-usage: smokeping <host | -host=address>
+usage: ./smokeping <host | -host=address> [<flags>]
 
 Flags:
       --size=1024

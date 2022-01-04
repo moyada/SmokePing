@@ -2,9 +2,9 @@ package monitor
 
 import (
 	"fmt"
+	"github.com/moyada/smoke-ping/v2/ping"
 	"os"
 	"os/signal"
-	"ping-prober/v2/ping"
 	"strings"
 	"syscall"
 	"time"
