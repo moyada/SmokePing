@@ -87,7 +87,7 @@ func (task *Task) Start() error {
 }
 
 func (task *Task) run() (*ping.Statistics, error) {
-	pl, err := ping.AuthProtocol(task.Host)
+	pl, err := ping.SelectSocket(task.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (task *Task) run() (*ping.Statistics, error) {
 	//pinger.Timeout = time.Second * count
 	pinger.RecordRtts = false
 
-	fmt.Printf("Start %v monitoring...\n", task.Host)
+	fmt.Printf("Start monitoring %v\n", task.Host)
 
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {

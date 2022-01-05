@@ -167,7 +167,8 @@ func xAxis(startTime, endTime *time.Time, step, min int) []chart.Tick {
 		nt := nextTime.Add(time.Second * time.Duration(step*i))
 		if nt.After(*endTime) {
 			// 终点
-			tick := chart.Tick{Value: getTimeNano(endTime), Label: timeFormat(endTime)}
+			et := endTime.Add(time.Second)
+			tick := chart.Tick{Value: getTimeNano(&et), Label: timeFormat(&et)}
 
 			if len(ticks) < 2 {
 				ticks = append(ticks, tick)
@@ -239,28 +240,32 @@ func (c *Chart) output(output string, startTime *time.Time, records map[int]*tim
 	var duration = time.Duration(lastIndex) * time.Second
 
 	lastTimeOut := -10
+	var xl float64 = -1
 
 	for i, key := range keys {
 		timeout, exist := (records)[key]
+
 		// 是否最后一个节点
 		lastItem := lastIndex == i
 
 		t := startTime.Add(time.Second * time.Duration(key))
 		x := getTimeNano(&t)
+		if lastItem {
+			et := t.Add(time.Second)
+			xl = getTimeNano(&et)
+		}
 
 		healthData.addPoint(x, healthY)
+		if lastItem {
+			healthData.addPoint(xl, healthY)
+		}
 
 		if exist && timeout != nil {
 			y := float64(timeout.Milliseconds())
 
 			// 上个请求超时
 			if i > 0 && lastTimeOut == i-1 {
-				var td time.Time
-				if lastItem {
-					td = t.Add(-40 * time.Millisecond)
-				} else {
-					td = t.Add(-20 * time.Millisecond)
-				}
+				td := t.Add(-20 * time.Millisecond)
 				xd := getTimeNano(&td)
 
 				// 延长耗时折线
@@ -268,19 +273,24 @@ func (c *Chart) output(output string, startTime *time.Time, records map[int]*tim
 				// 上升耗时折线
 				latencyData.addPoint(xd, y)
 
-				if lastItem {
-					// 延长耗时折线
-					latencyData.addPoint(x, y)
-				}
-
 				tt := t.Add(-40 * time.Millisecond)
 				xt := getTimeNano(&tt)
 
 				// 延长超时折线
 				timeoutData.addPoint(xt, timeoutY)
+
 				// 下降超时折线
 				timeoutData.addPoint(xt, zeroY)
+
+				if lastItem {
+					// 延长最后一个请求
+					latencyData.addPoint(xl, y)
+					timeoutData.addPoint(xl, zeroY)
+				}
 			} else {
+				if lastItem {
+					x = xl
+				}
 				latencyData.addPoint(x, y)
 				timeoutData.addPoint(x, zeroY)
 			}
@@ -291,37 +301,29 @@ func (c *Chart) output(output string, startTime *time.Time, records map[int]*tim
 				// 上个请求未超时
 
 				// 延长耗时折线
-				var dt time.Time
-				if lastItem {
-					dt = t.Add(-40 * time.Millisecond)
-				} else {
-					dt = t.Add(-30 * time.Millisecond)
-				}
+				dt := t.Add(-30 * time.Millisecond)
 				xd = getTimeNano(&dt)
 				yl := latencyData.yLine[len(latencyData.yLine)-1]
 
 				latencyData.addPoint(xd, yl)
 
 				// 延长超时折线
-				if lastItem {
-					tt := t.Add(-20 * time.Millisecond)
-					xt = getTimeNano(&tt)
+				tt := t.Add(-10 * time.Millisecond)
+				xt = getTimeNano(&tt)
+				timeoutData.addPoint(xt, zeroY)
 
-					timeoutData.addPoint(xt, zeroY)
+				if lastItem {
+					// 延长最后一个请求
+					latencyData.addPoint(xd, zeroY)
 					timeoutData.addPoint(xt, timeoutY)
 
-					xt = x
-				} else {
-					tt := t.Add(-10 * time.Millisecond)
-					xt = getTimeNano(&tt)
-
-					xt = x
-					timeoutData.addPoint(xt, zeroY)
-
-					xt = x
+					xd = xl
+					xt = xl
 				}
-
 			} else {
+				if lastItem {
+					x = xl
+				}
 				xd = x
 				xt = x
 			}

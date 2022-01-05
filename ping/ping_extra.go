@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func AuthProtocol(host string) (bool, error) {
+func SelectSocket(host string) (bool, error) {
 	pinger, err := NewPinger(host)
 	if err != nil {
 		return false, err
@@ -25,7 +25,7 @@ func AuthProtocol(host string) (bool, error) {
 	err = pinger.Run()
 
 	if err == nil && permitErr {
-		fmt.Println("[Operation Error] icmp socket not permitted, switch to udp.")
+		fmt.Println("[Operation Warning] icmp socket is not permitted, select udp socket.")
 	}
 	return pinger.Privileged(), err
 }
