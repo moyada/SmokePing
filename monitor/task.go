@@ -87,11 +87,17 @@ func (task *Task) Start() error {
 }
 
 func (task *Task) run() (*ping.Statistics, error) {
+	pl, err := ping.AuthProtocol(task.Host)
+	if err != nil {
+		return nil, err
+	}
 	pinger, err := ping.NewPinger(task.Host)
 	if err != nil {
 		return nil, err
 	}
-	//pinger.SetPrivileged(true)
+
+	pinger.SetPrivileged(pl)
+	pinger.Count = -1
 	pinger.Size = task.Size - 8
 
 	pinger.OnSend = func(pkt *ping.Packet) {
@@ -112,6 +118,8 @@ func (task *Task) run() (*ping.Statistics, error) {
 	//pinger.Count = count
 	//pinger.Timeout = time.Second * count
 	pinger.RecordRtts = false
+
+	fmt.Printf("Start %v monitoring...\n", task.Host)
 
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {

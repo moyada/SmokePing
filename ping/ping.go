@@ -91,11 +91,11 @@ func New(addr string) *Pinger {
 	var firstSequence = map[uuid.UUID]map[int]struct{}{}
 	firstSequence[firstUUID] = make(map[int]struct{})
 	pinger := &Pinger{
-		Count:      -1,
-		Interval:   time.Second,
-		RecordRtts: true,
-		Size:       timeSliceLength + trackerLength,
-		Timeout: time.Duration(math.MaxInt64),
+		Count:         -1,
+		Interval:      time.Second,
+		RecordRtts:    true,
+		Size:          timeSliceLength + trackerLength,
+		Timeout:       time.Duration(math.MaxInt64),
 		PacketTimeout: time.Second,
 
 		addr:              addr,
@@ -105,7 +105,7 @@ func New(addr string) *Pinger {
 		ipaddr:            nil,
 		ipv4:              false,
 		network:           "ip",
-		protocol:          "udp",
+		protocol:          "icmp",
 		awaitingSequences: firstSequence,
 		trackerPackets:    make(map[int]time.Time),
 		TTL:               64,
@@ -129,7 +129,7 @@ type Pinger struct {
 
 	// Timeout specifies a timeout before ping exits, regardless of how many
 	// packets have been received.
-	Timeout time.Duration
+	Timeout       time.Duration
 	PacketTimeout time.Duration
 
 	// Count tells pinger to stop after sending (and receiving) Count echo
@@ -287,7 +287,7 @@ type Statistics struct {
 }
 
 type InFlightPacket struct {
-	Seq int
+	Seq         int
 	TimeoutTime time.Time
 }
 
@@ -423,18 +423,21 @@ func (p *Pinger) Run() error {
 	if p.Size < timeSliceLength+trackerLength {
 		return fmt.Errorf("size %d is less than minimum required size %d", p.Size, timeSliceLength+trackerLength)
 	}
+
 	if p.ipaddr == nil {
 		err = p.Resolve()
 	}
 	if err != nil {
 		return err
 	}
+
 	if conn, err = p.listen(); err != nil {
 		return err
 	}
 	defer conn.Close()
 
 	conn.SetTTL(p.TTL)
+
 	return p.run(conn)
 }
 

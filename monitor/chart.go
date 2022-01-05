@@ -314,7 +314,9 @@ func (c *Chart) output(output string, startTime *time.Time, records map[int]*tim
 				} else {
 					tt := t.Add(-10 * time.Millisecond)
 					xt = getTimeNano(&tt)
-					timeoutData.addPoint(xt, timeoutY)
+
+					xt = x
+					timeoutData.addPoint(xt, zeroY)
 
 					xt = x
 				}
