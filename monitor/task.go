@@ -156,8 +156,8 @@ func (task *Task) gather() {
 }
 
 func toFileName(host string, startTime *time.Time, duration int) string {
-	s1 := startTime.Format("2006-01-02 15:04:05")
-	s2 := startTime.Add(time.Duration(duration) * time.Second).Format("15:04:05")
+	s1 := startTime.Format("2006-01-02 15_04_05")
+	s2 := startTime.Add(time.Duration(duration) * time.Second).Format("15_04_05")
 	return fmt.Sprintf("%v %v~%v.png", host, s1, s2)
 }
 
