@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"github.com/moyada/smoke-ping/v2/log"
 	"github.com/moyada/smoke-ping/v2/ping"
 	"os"
 	"os/signal"
@@ -24,6 +25,8 @@ type Task struct {
 	report  Report
 
 	recording int
+
+	Logger    log.BizLogger
 	Collector Collector
 }
 
@@ -71,7 +74,9 @@ func (task *Task) Start() error {
 	go func() {
 		select {
 		case sig := <-c:
-			fmt.Printf("\nlatency monitor %s \n", sig)
+			if task.Logger != nil {
+				task.Logger.Info(fmt.Sprintf("\nlatency monitor %s \n", sig))
+			}
 			task.done()
 			done <- true
 		}
@@ -105,12 +110,16 @@ func (task *Task) run() (*ping.Statistics, error) {
 	}
 
 	pinger.OnTimeout = func(seq int) {
-		fmt.Printf("Request timeout for icmp_seq %v\n", seq)
+		if task.Logger != nil {
+			task.Logger.Info(fmt.Sprintf("Request timeout for icmp_seq %v", seq))
+		}
 	}
 
 	pinger.OnRecv = func(pkt *ping.Packet) {
-		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v\n",
-			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt)
+		if task.Logger != nil {
+			task.Logger.Info(fmt.Sprintf("%d bytes from %s: icmp_seq=%d time=%v",
+				pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt))
+		}
 		task.records[pkt.Seq] = &pkt.Rtt
 	}
 
@@ -119,7 +128,9 @@ func (task *Task) run() (*ping.Statistics, error) {
 	//pinger.Timeout = time.Second * count
 	pinger.RecordRtts = false
 
-	fmt.Printf("Start monitoring %v\n", task.Host)
+	if task.Logger != nil {
+		task.Logger.Info(fmt.Sprintf("start monitoring %v", task.Host))
+	}
 
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {
@@ -128,10 +139,10 @@ func (task *Task) run() (*ping.Statistics, error) {
 	return pinger.Statistics(), nil
 }
 
-func (task *Task) done() {
+func (task *Task) done() (string, error) {
 	task.pinger.Stop()
 	task.gather()
-	task.saveResult()
+	return task.saveResult()
 }
 
 func (task *Task) gather() {
@@ -187,16 +198,16 @@ func (task *Task) getOutput() string {
 	return output
 }
 
-func (task *Task) saveResult() {
+func (task *Task) saveResult() (string, error) {
 	count := len(task.records)
 	if count < 2 {
-		return
+		return "", nil
 	}
 
 	output := task.getOutput()
+
 	fmt.Printf("build %v latency report >>> %v\n", task.Host, output)
+
 	err := task.Collector.output(output, &task.startTime, task.records, &task.report)
-	if err != nil {
-		panic(err)
-	}
+	return output, err
 }

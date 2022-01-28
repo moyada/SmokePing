@@ -3,48 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/moyada/smoke-ping/v2/log"
 	"github.com/moyada/smoke-ping/v2/monitor"
-	"net"
 	"os"
-	"strings"
-	"unicode"
 )
 
-func isValidIpAddress(addr string) bool {
-	if addr == "" {
-		return false
-	}
-
-	ip := net.ParseIP(addr)
-	if ip != nil {
-		return true
-	}
-
-	// web host
-	pc := strings.Count(addr, ".")
-	if pc < 1 || pc > 2 {
-		return false
-	}
-
-	index := strings.Index(addr, ".")
-	if index == 0 {
-		return false
-	}
-	index = strings.LastIndex(addr, ".")
-	end := addr[index+1:]
-	if end == "" {
-		return false
-	}
-
-	for _, t := range end {
-		if !unicode.IsLetter(t) {
-			return false
-		}
-	}
-	return true
+func main() {
+	httpServer()
 }
 
-func main() {
+func main1() {
 	var (
 		host   = flag.String("host", "", "Address on which to monitor latency metrics.")
 		size   = flag.Int("size", 1024, "Size of packet being sent.")
@@ -69,7 +37,7 @@ func main() {
 		return
 	}
 
-	task := monitor.Task{Host: addr, Size: *size, Output: *output, Collector: &monitor.Chart{}}
+	task := monitor.Task{Host: addr, Size: *size, Output: *output, Logger: &log.Console{}, Collector: &monitor.Chart{}}
 	err := task.Start()
 	if err != nil {
 		fmt.Println(err.Error())
