@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"net"
@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-func isValidIpAddress(addr string) bool {
+func IsValidIpAddress(addr string) bool {
 	if addr == "" {
 		return false
 	}

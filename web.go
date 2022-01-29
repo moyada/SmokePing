@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/moyada/smoke-ping/v2/monitor"
+	"github.com/moyada/smoke-ping/v2/util"
 	"io/ioutil"
 	"net/http"
 )
@@ -11,12 +12,6 @@ import (
 var hostJob = make(map[string]*monitor.WebTask)
 
 func httpServer() {
-	fmt.Println("【使用说明】")
-	fmt.Println("1.开启监控 http://localhost:7777/ping/{host}  例如: http://localhost:7777/ping/www.tiktok.com")
-	fmt.Println("2.关闭监控并展示结果 http://localhost:7777/pong/{host}  例如: http://localhost:7777/pong/www.tiktok.com")
-	fmt.Println("3.关闭所有监控保存结果 http://localhost:7777/stop")
-	fmt.Println("@监控结果保存在 report 文件夹里\n")
-
 	gin.ForceConsoleColor()
 	engine := gin.Default()
 	engine.GET("ping/:host", ping)
@@ -27,7 +22,7 @@ func httpServer() {
 
 func ping(c *gin.Context) {
 	host := c.Param("host")
-	if !isValidIpAddress(host) {
+	if !util.IsValidIpAddress(host) {
 		c.String(http.StatusBadRequest, "host invalid")
 		return
 	}
@@ -46,7 +41,7 @@ func ping(c *gin.Context) {
 
 func pong(c *gin.Context) {
 	host := c.Param("host")
-	if !isValidIpAddress(host) {
+	if !util.IsValidIpAddress(host) {
 		c.String(http.StatusBadRequest, "host invalid")
 		return
 	}

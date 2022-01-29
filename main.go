@@ -1,45 +1,14 @@
 package main
 
-import (
-	"flag"
-	"fmt"
-	"github.com/moyada/smoke-ping/v2/log"
-	"github.com/moyada/smoke-ping/v2/monitor"
-	"os"
-)
+import "fmt"
 
 func main() {
+	fmt.Println("【使用说明】")
+	fmt.Println("1.开启监控 http://localhost:7777/ping/{host}  例如: http://localhost:7777/ping/www.tiktok.com")
+	fmt.Println("2.关闭监控并展示结果 http://localhost:7777/pong/{host}  例如: http://localhost:7777/pong/www.tiktok.com")
+	fmt.Println("3.关闭所有监控保存结果 http://localhost:7777/stop")
+	fmt.Println("@监控结果保存在 report 文件夹里\n")
+
 	httpServer()
 }
 
-func main1() {
-	var (
-		host   = flag.String("host", "", "Address on which to monitor latency metrics.")
-		size   = flag.Int("size", 1024, "Size of packet being sent.")
-		output = flag.String("output", "", "Output location of the latency report.")
-	)
-
-	addr := os.Args[1]
-	if addr == "" {
-		fmt.Println("host require!!")
-		return
-	}
-
-	if addr[0] == '-' {
-		flag.Parse()
-		addr = *host
-	} else {
-		flag.CommandLine.Parse(os.Args[2:])
-	}
-
-	if !isValidIpAddress(addr) {
-		fmt.Printf("host %v is invalid!!", addr)
-		return
-	}
-
-	task := monitor.Task{Host: addr, Size: *size, Output: *output, Logger: &log.Console{}, Collector: &monitor.Chart{}}
-	err := task.Start()
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-}
